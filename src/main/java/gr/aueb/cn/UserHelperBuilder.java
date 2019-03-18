@@ -1,19 +1,20 @@
 package gr.aueb.cn;
 
+import java.net.InetAddress;
 import java.net.Socket;
 
 public class UserHelperBuilder {
 
     private Socket socket;
-    private String username, password, ip;
-    private Integer kwhs;
+    private String username, password;
+    private InetAddress ip;
 
     public UserHelperBuilder(){
 
     }
 
     public UserHelper buildUser(){
-        return new UserHelper(socket, ip, username, password, kwhs);
+        return new UserHelper(socket, ip, username, password);
     }
 
     public UserHelperBuilder socket(Socket socket){
@@ -21,7 +22,7 @@ public class UserHelperBuilder {
         return this;
     }
 
-    public UserHelperBuilder ip(String ip){
+    public UserHelperBuilder ip(InetAddress ip){
         this.ip = ip;
         return this;
     }
@@ -36,8 +37,4 @@ public class UserHelperBuilder {
         return this;
     }
 
-    public UserHelperBuilder kwhs(Integer kwhs){
-        this.kwhs = kwhs;
-        return this;
-    }
 }

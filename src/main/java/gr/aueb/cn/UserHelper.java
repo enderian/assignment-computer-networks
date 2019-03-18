@@ -3,6 +3,7 @@ package gr.aueb.cn;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.net.InetAddress;
 import java.net.Socket;
 
 public class UserHelper extends Thread{
@@ -10,19 +11,19 @@ public class UserHelper extends Thread{
     private Socket socket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
-    private String username, password, ip;
-    private Integer kwhs;
+    private String username, password;
+    private InetAddress ip;
 
-    public UserHelper(Socket socket, String ip, String username, String password, Integer kwhs){
+    public UserHelper(Socket socket, InetAddress ip, String username, String password){
         this.ip = ip;
         this.username = username;
         this.password = password;
-        this.kwhs = kwhs;
         this.socket = socket;
     }
 
     @Override
     public void run() {
+        System.out.println("Success");
         while (true){
             try {
                 this.out = new ObjectOutputStream(socket.getOutputStream());
@@ -53,11 +54,8 @@ public class UserHelper extends Thread{
         return password;
     }
 
-    public String getIp() {
+    public InetAddress getIp() {
         return ip;
     }
 
-    public Integer getKwhs() {
-        return kwhs;
-    }
 }

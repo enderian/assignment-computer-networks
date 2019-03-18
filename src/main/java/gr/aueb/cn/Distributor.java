@@ -5,15 +5,18 @@ import org.omg.PortableServer.THREAD_POLICY_ID;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Hashtable;
 
 public class Distributor {
 
     private ServerSocket server;
     private Socket socket;
     private ArrayList<UserHelper> energyUsers = new ArrayList<>();
+    private Hashtable<UserHelper, Integer> availability = new Hashtable<>();
 
     public Distributor(int port){
         try {
@@ -42,42 +45,41 @@ public class Distributor {
     private void manageIncoming(Socket socket) {
         try {
             ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
-            String message = (String) in.readObject();
-            if (message.equalsIgnoreCase("signin")){
-                signIn(socket, in);
+            ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+            Object message = in.readObject();
+            if (message instanceof SignIn){
+                signIn(socket, (SignIn) message);
+            }
+            else if(message instanceof UpdateRequest){
+                update(socket, (UpdateRequest) message);
+            }
+            else{
+                //TODO ANY OTHER CASE
             }
         } catch (IOException | ClassNotFoundException e) {
             e.printStackTrace();
         }
+
+
     }
 
-    private void signIn(Socket socket, ObjectInputStream in) {
-        try {
-            String client_ip = (String) in.readObject();
-            String username = (String) in.readObject();
-            String password = (String) in.readObject();
-            Integer kwhs = (Integer) in.readObject();
-            //in.close();
-            if(client_ip == null || username == null || password == null ||
-                    kwhs == null){
-                //socket.close();
-                return;
-            }
+    private void signIn(Socket socket, SignIn request) {
+        if(!request.checkParameters()) return;
 
-            UserHelper userHelper = new UserHelperBuilder()
-                    .socket(socket)
-                    .ip(client_ip)
-                    .username(username)
-                    .password(password)
-                    .kwhs(kwhs)
-                    .buildUser();
+        UserHelper userHelper = new UserHelperBuilder()
+                .socket(socket)
+                .ip(request.getIp())
+                .username(request.getUsername())
+                .password(request.getPassword())
+                .buildUser();
 
-            userHelper.start();
-            energyUsers.add(userHelper);
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (ClassNotFoundException e) {
-            e.printStackTrace();
-        }
+        availability.put(userHelper, request.getKwhs());
+
+        userHelper.start();
+        energyUsers.add(userHelper);
+    }
+
+    private void update(Socket socket, UpdateRequest message) {
+
     }
 }
