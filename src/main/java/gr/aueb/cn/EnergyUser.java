@@ -1,5 +1,7 @@
 package gr.aueb.cn;
 
+import org.omg.PortableServer.THREAD_POLICY_ID;
+
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -25,13 +27,48 @@ public class EnergyUser {
             SignIn signIn = new SignIn("test", "123", 100);
             out.writeObject(signIn);
             out.flush();
+            Runnable runnable = () -> {
+                while(true){
+                    try {
+                        Object message = in.readObject();
+                        if (message instanceof UpdateRequest){
+                            requestRefresh((UpdateRequest) message);
+                        }
+                    } catch (IOException | ClassNotFoundException e) {
+                        e.printStackTrace();
+                    }
+                }
+            };
+            new Thread(runnable).start();
             //out.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    public void requestRefresh(){
+    public void dump(){
+        try{
+            UpdateRequest request = new UpdateRequest();
+            out.writeObject(request);
+            out.flush();
+            System.out.println("Flushed");
+        }
+        catch (IOException e){
+            e.printStackTrace();
+        }
+    }
 
+    public void requestRefresh(UpdateRequest request){
+        request.setNewUnits(available_energy);
+        try {
+            out.writeObject(request);
+            out.flush();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void setAvailable_energy(int available_energy) {
+        this.available_energy = available_energy;
     }
 }

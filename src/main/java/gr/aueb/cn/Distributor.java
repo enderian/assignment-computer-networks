@@ -1,14 +1,12 @@
 package gr.aueb.cn;
 
-import org.omg.PortableServer.THREAD_POLICY_ID;
-
 import java.io.IOException;
-import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Hashtable;
 
 public class Distributor {
@@ -17,6 +15,7 @@ public class Distributor {
     private Socket socket;
     private ArrayList<UserHelper> energyUsers = new ArrayList<>();
     private Hashtable<UserHelper, Integer> availability = new Hashtable<>();
+    private Hashtable<UserHelper, Integer> reservedEnergy = new Hashtable<>();
 
     public Distributor(int port){
         try {
@@ -48,10 +47,10 @@ public class Distributor {
             ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
             Object message = in.readObject();
             if (message instanceof SignIn){
-                signIn(socket, (SignIn) message);
+                signIn(socket, out, in, (SignIn) message);
             }
             else if(message instanceof UpdateRequest){
-                update(socket, (UpdateRequest) message);
+                update((UpdateRequest) message);
             }
             else{
                 //TODO ANY OTHER CASE
@@ -63,11 +62,14 @@ public class Distributor {
 
     }
 
-    private void signIn(Socket socket, SignIn request) {
+    private void signIn(Socket socket, ObjectOutputStream out, ObjectInputStream in, SignIn request) {
         if(!request.checkParameters()) return;
 
         UserHelper userHelper = new UserHelperBuilder()
+                .distributor(this)
                 .socket(socket)
+                .out(out)
+                .in(in)
                 .ip(request.getIp())
                 .username(request.getUsername())
                 .password(request.getPassword())
@@ -79,7 +81,15 @@ public class Distributor {
         energyUsers.add(userHelper);
     }
 
-    private void update(Socket socket, UpdateRequest message) {
-
+    public void update(UpdateRequest request) {
+        System.out.println("Hello");
+        for(UserHelper u : energyUsers){
+            System.out.println(availability.get(u));
+        }
+        for(UserHelper u : energyUsers){
+            request = u.update(request);
+            availability.put(u, request.getNewUnits());
+            reservedEnergy.put(u, request.getReservedUnits());
+        }
     }
 }
