@@ -2,21 +2,37 @@ package gr.aueb.cn;
 
 import org.omg.PortableServer.THREAD_POLICY_ID;
 
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.net.Socket;
 
 public class EnergyUser {
 
     private Socket connection;
-    private String ip;
+    private String ip, username, password;
     private int port, available_energy, in_need, reserved;
     private ObjectOutputStream out;
     private ObjectInputStream in;
 
-    public EnergyUser(int available_energy){
+    public EnergyUser(String username, String password, int available_energy){
+        this.username = username;
+        this.password = password;
         this.available_energy = available_energy;
+    }
+
+    public void menu() throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        String option = "";
+        while((option = reader.readLine()) != null){
+            if(option.equalsIgnoreCase("0")){
+                ip = reader.readLine();
+                port = Integer.parseInt(reader.readLine());
+                issueConnection(ip, port);
+            }
+            else if(option.equalsIgnoreCase("1")){
+
+            }
+        }
+
     }
 
     public void issueConnection(String ip, int port){
