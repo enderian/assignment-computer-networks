@@ -1,6 +1,7 @@
 package gr.aueb.cn;
 
 public class Controller {
+
     public static void main(String[] args) {
         Distributor server = new Distributor(4200);
 
@@ -13,4 +14,5 @@ public class Controller {
         user2.issueConnection("localhost", 4200);
 */
     }
+
 }

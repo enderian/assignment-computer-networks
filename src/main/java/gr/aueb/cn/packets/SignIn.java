@@ -1,4 +1,4 @@
-package gr.aueb.cn;
+package gr.aueb.cn.packets;
 
 import java.io.Serializable;
 import java.net.DatagramSocket;

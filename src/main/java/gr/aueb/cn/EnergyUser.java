@@ -1,23 +1,62 @@
 package gr.aueb.cn;
 
-import org.omg.PortableServer.THREAD_POLICY_ID;
+import gr.aueb.cn.packets.RequestEnergy;
+import gr.aueb.cn.packets.SendEnergy;
+import gr.aueb.cn.packets.SignIn;
+import gr.aueb.cn.packets.Update;
 
 import java.io.*;
 import java.net.Socket;
-import java.util.ArrayList;
 
-public class EnergyUser {
+public class EnergyUser implements Serializable {
 
-    private Socket connection;
-    private String ip, username, password;
-    private int port, available_energy, in_need, reserved;
-    private ObjectOutputStream out;
-    private ObjectInputStream in;
+    private static final long serialVersionUID = -2961923979657577088L;
 
-    public EnergyUser(String username, String password, int available_energy){
+    private String username;
+    private int available_energy, in_need, reserved;
+
+    private transient Socket connection;
+    private transient ObjectOutputStream out;
+    private transient ObjectInputStream in;
+    private transient String ip, password;
+    private transient int port;
+
+    public EnergyUser(String username, String password, int available_energy) {
         this.username = username;
         this.password = password;
         this.available_energy = available_energy;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public int getAvailable_energy() {
+        return available_energy;
+    }
+
+    public void setAvailable_energy(int available_energy) {
+        this.available_energy = available_energy;
+    }
+
+    public int getIn_need() {
+        return in_need;
+    }
+
+    public void setIn_need(int in_need) {
+        this.in_need = in_need;
+    }
+
+    public int getReserved() {
+        return reserved;
+    }
+
+    public void setReserved(int reserved) {
+        this.reserved = reserved;
     }
 
     public void menu() throws IOException {
@@ -27,58 +66,44 @@ public class EnergyUser {
         System.out.println("0. Sign in");
         System.out.println("1. Request energy");
         System.out.println("2. Request energy from specific user");
-        while((option = reader.readLine()) != null){
-            if(option.equalsIgnoreCase("0")){
+
+        while ((option = reader.readLine()) != null) {
+            if (option.equalsIgnoreCase("0")) {
+
                 System.out.println("Give IP of server");
                 ip = reader.readLine();
                 System.out.println("Give port of server");
                 port = Integer.parseInt(reader.readLine());
                 issueConnection(ip, port);
-            }
-            else if(option.equalsIgnoreCase("1")){
+
+            } else if (option.equalsIgnoreCase("1")) {
+
                 System.out.println("1. Request with second backup");
                 System.out.println("2. Request with delay");
                 String opt2 = reader.readLine();
-                if(opt2.equalsIgnoreCase("1")){
+
+                if (opt2.equalsIgnoreCase("1")) {
                     System.out.println("How much energy do you need?");
                     int en = Integer.parseInt(reader.readLine());
-                    EnergyRequest er = new EnergyRequest(en);
-                    sendEnergyRequest(er);
-                }
-                else if(opt2.equalsIgnoreCase("2")){
+                    //Sends request
+                    out.writeObject(new RequestEnergy(null, username, en));
+                } else if (opt2.equalsIgnoreCase("2")) {
                     System.out.println("How much energy do you need?");
                     int en = Integer.parseInt(reader.readLine());
                     System.out.println("How much delay do you want before trying again?");
                     long time = Long.parseLong(reader.readLine());
-                    EnergyRequest er = new EnergyRequestWait(en, time);
-                    sendEnergyRequest(er);
+                    out.writeObject(new RequestEnergy(null, username, en, time));
                 }
-            }
-            else if(option.equalsIgnoreCase("3")){
-                try {
-                    ArrayList<EnergyUser> currentUsers = (ArrayList<EnergyUser>)in.readObject();
-                    for(EnergyUser eu : currentUsers){
-                        System.out.println("User with ip: " + eu.ip);
-                    }
-                    System.out.println("Give the IP of the user you want to receive energy");
-                    String req_ip = reader.readLine();
-                    EnergyUser found = null;
-                    for(EnergyUser eu : currentUsers){
-                        if(eu.ip.equalsIgnoreCase(req_ip)){
-                            found = eu;
-                        }
-                    }
-                    if(found != null){
-                        System.out.println("Give energy required");
-                        int en = Integer.parseInt(reader.readLine());
-                        EnergyRequestToEU req = new EnergyRequestToEU(en, found);
-                        sendEnergyRequest(req);
-                    }
-                } catch (ClassNotFoundException e) {
-                    e.printStackTrace();
-                }
-            }
-            else{
+
+            } else if (option.equalsIgnoreCase("3")) {
+
+                System.out.println("Give the username of the user you want to receive energy");
+                String req_username = reader.readLine();
+                System.out.println("Give energy required");
+                int en = Integer.parseInt(reader.readLine());
+                out.writeObject(new RequestEnergy(req_username, username, en));
+
+            } else {
                 System.out.println("Wrong option! Select again!");
                 System.out.println("Menu:");
                 System.out.println("0. Sign in");
@@ -88,20 +113,26 @@ public class EnergyUser {
         }
     }
 
-    public void issueConnection(String ip, int port){
+    public void issueConnection(String ip, int port) throws IOException {
         try {
-            this.connection = new Socket(ip, port);
+            connection = new Socket(ip, port);
             out = new ObjectOutputStream(this.connection.getOutputStream());
             in = new ObjectInputStream(this.connection.getInputStream());
-            SignIn signIn = new SignIn("test", "123", 100);
-            out.writeObject(signIn);
-            out.flush();
+
+            out.writeObject(new SignIn(username, password, available_energy));
+
             Runnable runnable = () -> {
-                while(true){
+                while (true) {
                     try {
                         Object message = in.readObject();
-                        if (message instanceof UpdateRequest){
-                            requestRefresh((UpdateRequest) message);
+                        if (message instanceof RequestEnergy) {
+                            requestEnergy((RequestEnergy) message);
+                        } else if (message instanceof SendEnergy) {
+                            receiveEnergy((SendEnergy) message);
+                        } else if (message instanceof Update) {
+                            if (((Update) message).getUsername().equals(username)) {
+                                sendUpdate();
+                            }
                         }
                     } catch (IOException | ClassNotFoundException e) {
                         e.printStackTrace();
@@ -109,44 +140,36 @@ public class EnergyUser {
                 }
             };
             new Thread(runnable).start();
-            //out.close();
         } catch (IOException e) {
             e.printStackTrace();
+        } finally {
+            connection.close();
         }
     }
 
-    public void sendEnergyRequest(EnergyRequest er){
-        try {
-            out.writeObject(er);
-            out.flush();
-        } catch (IOException e) {
-            e.printStackTrace();
+    private void receiveEnergy(SendEnergy message) throws IOException {
+        if (message.getDestination().equals(username)) {
+            available_energy += message.getEnergy();
+
+            sendUpdate();
         }
     }
 
-    public void dump(){
-        try{
-            UpdateRequest request = new UpdateRequest();
-            out.writeObject(request);
-            out.flush();
-            System.out.println("Flushed");
+    private void requestEnergy(RequestEnergy message) throws IOException {
+        if (available_energy < message.getEnergyNeeded() || in_need > 0) {
+            return;
         }
-        catch (IOException e){
-            e.printStackTrace();
-        }
+
+        available_energy -= message.getEnergyNeeded();
+        reserved += message.getEnergyNeeded();
+        out.writeObject(new SendEnergy(username, message.getUsername(), message.getEnergyNeeded()));
+        out.flush();
+
+        sendUpdate();
     }
 
-    public void requestRefresh(UpdateRequest request){
-        request.setNewUnits(available_energy);
-        try {
-            out.writeObject(request);
-            out.flush();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public void setAvailable_energy(int available_energy) {
-        this.available_energy = available_energy;
+    private void sendUpdate() throws IOException {
+        out.writeObject(new Update(username,this));
+        out.flush();
     }
 }
