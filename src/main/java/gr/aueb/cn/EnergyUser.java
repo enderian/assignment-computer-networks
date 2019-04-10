@@ -74,7 +74,7 @@ public class EnergyUser implements Serializable {
                 ip = reader.readLine();
                 System.out.println("Give port of server");
                 port = Integer.parseInt(reader.readLine());
-                issueConnection(ip, port);
+                new Thread(() -> issueConnection(ip, port)).start();
 
             } else if (option.equalsIgnoreCase("1")) {
 
@@ -86,7 +86,7 @@ public class EnergyUser implements Serializable {
                     System.out.println("How much energy do you need?");
                     int en = Integer.parseInt(reader.readLine());
                     //Sends request
-                    out.writeObject(new RequestEnergy(null, username, en));
+                    out.writeObject(new RequestEnergy(null, username, en, true));
                 } else if (opt2.equalsIgnoreCase("2")) {
                     System.out.println("How much energy do you need?");
                     int en = Integer.parseInt(reader.readLine());
@@ -105,21 +105,24 @@ public class EnergyUser implements Serializable {
 
             } else {
                 System.out.println("Wrong option! Select again!");
-                System.out.println("Menu:");
-                System.out.println("0. Sign in");
-                System.out.println("1. Request energy");
-                System.out.println("2. Request energy from specific user");
             }
+            System.out.println("Menu:");
+            System.out.println("0. Sign in");
+            System.out.println("1. Request energy");
+            System.out.println("2. Request energy from specific user");
         }
     }
 
-    public void issueConnection(String ip, int port) throws IOException {
+    public void issueConnection(String ip, int port) {
         try {
             connection = new Socket(ip, port);
             out = new ObjectOutputStream(this.connection.getOutputStream());
             in = new ObjectInputStream(this.connection.getInputStream());
 
             out.writeObject(new SignIn(username, password, available_energy));
+            out.flush();
+
+            System.out.println("Here");
 
             Runnable runnable = () -> {
                 while (true) {
@@ -142,9 +145,9 @@ public class EnergyUser implements Serializable {
             new Thread(runnable).start();
         } catch (IOException e) {
             e.printStackTrace();
-        } finally {
+        } /*finally {
             connection.close();
-        }
+        }*/
     }
 
     private void receiveEnergy(SendEnergy message) throws IOException {

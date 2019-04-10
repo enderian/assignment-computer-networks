@@ -14,10 +14,19 @@ public class RequestEnergy implements Serializable {
 
     private Long delay = null;
 
+    private boolean backup = false;
+
     public RequestEnergy(String username, String destination, int energyNeeded) {
         this.username = username;
         this.destination = destination;
         this.energyNeeded = energyNeeded;
+    }
+
+    public RequestEnergy(String username, String destination, int energyNeeded, boolean backup) {
+        this.username = username;
+        this.destination = destination;
+        this.energyNeeded = energyNeeded;
+        this.backup = backup;
     }
 
     public RequestEnergy(String username, String destination, int energyNeeded, Long delay) {
@@ -53,6 +62,14 @@ public class RequestEnergy implements Serializable {
 
     public Long getDelay() {
         return delay;
+    }
+
+    public boolean wantsBackup() {
+        return backup;
+    }
+
+    public void setBackup(boolean backup) {
+        this.backup = backup;
     }
 
     public void setDelay(Long delay) {

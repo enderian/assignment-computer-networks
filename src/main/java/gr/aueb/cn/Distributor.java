@@ -10,6 +10,7 @@ import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Hashtable;
 import java.util.Optional;
 
@@ -51,6 +52,7 @@ public class Distributor {
                     if (message instanceof SignIn) {
                         signIn(out, (SignIn) message);
                         username = ((SignIn) message).getUsername();
+                        System.out.println(username + " connected!");
                     } else if (message instanceof RequestEnergy) {
                         requestedEnergy((RequestEnergy) message);
                     } else if (message instanceof SendEnergy) {
@@ -141,6 +143,39 @@ public class Distributor {
             //Store for later access.
             delayedRequests.put(message, System.currentTimeMillis() + message.getDelay());
         } else {
+            if(message.wantsBackup()){
+
+                User user1 = null, user2 = null;
+                ArrayList<User> findTwo = new ArrayList<>(energyUsers.values());
+                Optional<User> optionalUser = findTwo.stream().max(Comparator.comparing(User::getAvailablePower));
+
+                if(optionalUser.isPresent()){
+                    user1 = optionalUser.get();
+                    findTwo.remove(user1);
+                }
+
+                optionalUser = findTwo.stream().max(Comparator.comparing(User::getAvailablePower));
+                if(optionalUser.isPresent()){
+                    user2 = optionalUser.get();
+                    findTwo.remove(user2);
+                }
+
+                if(user1 != null && user2 != null){
+                    if((user1.getAvailablePower() + user2.getAvailablePower()) >= message.getEnergyNeeded()){
+                        message.setEnergyNeeded(message.getEnergyNeeded()-user1.getAvailablePower());
+                        RequestEnergy msg1 = new RequestEnergy(message.getUsername(), message.getDestination(), user1.getAvailablePower());
+                        outputs.get(user1.getUsername()).writeObject(msg1);
+                        RequestEnergy msg2 = new RequestEnergy(message.getUsername(), message.getDestination(), message.getEnergyNeeded()-user1.getAvailablePower());
+                        outputs.get(user2.getUsername()).writeObject(msg2);
+                    }
+                    else{
+                        outputs.get(message.getUsername()).writeObject(new RequestEnergyFailure(message.getUsername()));
+                    }
+                }
+                else{
+                    outputs.get(message.getUsername()).writeObject(new RequestEnergyFailure(message.getUsername()));
+                }
+            }
             outputs.get(message.getUsername()).writeObject(new RequestEnergyFailure(message.getUsername()));
         }
     }
