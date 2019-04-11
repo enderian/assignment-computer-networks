@@ -64,4 +64,14 @@ public class User {
     public void setNeededPower(int neededPower) {
         this.neededPower = neededPower;
     }
+
+    @Override
+    public String toString() {
+        return "User status" +
+                "ip=" + ip +
+                ", username='" + username + '\'' +
+                ", availablePower=" + availablePower +
+                ", reservedPower=" + reservedPower +
+                ", neededPower=" + neededPower;
+    }
 }

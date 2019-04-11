@@ -2,7 +2,11 @@ package gr.aueb.cn.packets;
 
 import gr.aueb.cn.EnergyUser;
 
-public class Update {
+import java.io.Serializable;
+
+public class Update implements Serializable {
+
+    private static final long serialVersionUID = 102L;
 
     private String username;
     private EnergyUser energyUser;
