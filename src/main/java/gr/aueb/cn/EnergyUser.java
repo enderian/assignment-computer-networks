@@ -4,6 +4,9 @@ import gr.aueb.cn.packets.*;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.Random;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class EnergyUser implements Serializable {
 
@@ -17,6 +20,7 @@ public class EnergyUser implements Serializable {
     private transient ObjectInputStream in;
     private transient String ip, password;
     private transient int port;
+    private transient Random random = new Random();
 
     public EnergyUser(String username, String password, int available_energy) {
         this.username = username;
@@ -80,7 +84,7 @@ public class EnergyUser implements Serializable {
 
             } else if (option.equalsIgnoreCase("1")) {
 
-                System.out.println("1. Request with second backup");
+                System.out.println("1. Request");
                 System.out.println("2. Request with delay");
                 String opt2 = reader.readLine();
 
@@ -117,7 +121,7 @@ public class EnergyUser implements Serializable {
         }
     }
 
-    private void issueConnection(String ip, int port) {
+    private synchronized void issueConnection(String ip, int port) {
         try {
             connection = new Socket(ip, port);
             out = new ObjectOutputStream(this.connection.getOutputStream());
@@ -127,6 +131,13 @@ public class EnergyUser implements Serializable {
             out.flush();
 
             Runnable runnable = () -> {
+                new Timer(true).scheduleAtFixedRate(new TimerTask() {
+                    @Override
+                    public void run() {
+                        increaseNeeds();
+                    }
+                }, 1000L, 1000L);
+
                 while (true) {
                     try {
                         Object message = in.readObject();
@@ -138,12 +149,12 @@ public class EnergyUser implements Serializable {
                             if (((Update) message).getUsername().equals(username)) {
                                 sendUpdate();
                             }
-                        }
-                        else if (message instanceof RequestEnergyFailure){
-                            System.out.println(((RequestEnergyFailure) message).getDestination() + " failed.");
+                        } else if (message instanceof RequestEnergyFailure) {
+                            System.out.println("Request failed.");
                         }
                     } catch (IOException | ClassNotFoundException e) {
                         e.printStackTrace();
+                        break;
                     }
                 }
             };
@@ -155,36 +166,56 @@ public class EnergyUser implements Serializable {
         }*/
     }
 
-    private void receiveEnergy(SendEnergy message) throws IOException {
-        System.out.println("Received");
-        if (message.getDestination().equals(username)) {
-            available_energy += message.getEnergy();
+    private void increaseNeeds() {
+        // < 50 so that no deadlocks don't occur.
+        if (random.nextInt(20) == 0 && available_energy < 50) {
+            int needed = random.nextInt(5) + 1;
+            in_need += needed;
+            try {
+                sendUpdate();
 
+                synchronized (out) {
+                    out.writeObject(new RequestEnergy(null, username, needed, 1000L));
+                    out.flush();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void receiveEnergy(SendEnergy message) throws IOException {
+        System.out.println("Received energy.");
+        if (message.getDestination().equals(username) && message.getEnergy() > 0) {
+            available_energy += message.getEnergy();
+            in_need = Math.max(in_need - message.getEnergy(), 0);
             sendUpdate();
         }
-        System.out.println(toString());
     }
 
     private void requestEnergy(RequestEnergy message) throws IOException {
-        System.out.println("Sending Energy");
-        if (available_energy < message.getEnergyNeeded() || in_need > 0) {
+        if (available_energy < message.getEnergyNeeded() || message.getEnergyNeeded() < 1 || in_need > 0) {
             return;
         }
 
+        System.out.println("Energy request received from: " + message.getDestination());
+
         available_energy -= message.getEnergyNeeded();
         reserved += message.getEnergyNeeded();
-        System.out.println(message.getDestination());
-        out.writeObject(new SendEnergy(username, message.getDestination(), message.getEnergyNeeded()));
-        out.flush();
 
+        synchronized (out) {
+            out.writeObject(new SendEnergy(username, message.getDestination(), message.getEnergyNeeded()));
+            out.flush();
+        }
         sendUpdate();
-        System.out.println(toString());
     }
 
     private void sendUpdate() throws IOException {
-        System.out.println("Sending Update");
-        out.writeObject(new Update(username,this));
-        out.flush();
+        System.out.println("Sending Update: " + toString());
+        synchronized (out) {
+            out.writeObject(new Update(username, this));
+            out.flush();
+        }
     }
 
     @Override

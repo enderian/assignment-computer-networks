@@ -1,12 +1,12 @@
 package gr.aueb.cn.model;
-
 import java.net.InetAddress;
 
-public class User {
+public class User implements Comparable<User> {
 
     private InetAddress ip;
     private String username, password;
     private int availablePower, reservedPower, neededPower;
+    private long lastSelected;
 
     User(InetAddress ip, String username, String password, int availablePower, int reservedPower, int neededPower) {
         this.ip = ip;
@@ -65,13 +65,31 @@ public class User {
         this.neededPower = neededPower;
     }
 
+    public long getLastSelected() {
+        return lastSelected;
+    }
+
+    public void setLastSelected(long lastSelected) {
+        this.lastSelected = lastSelected;
+    }
+
     @Override
     public String toString() {
-        return "User status" +
+        return "user: " +
                 "ip=" + ip +
                 ", username='" + username + '\'' +
                 ", availablePower=" + availablePower +
                 ", reservedPower=" + reservedPower +
                 ", neededPower=" + neededPower;
+    }
+
+
+    private int probability() {
+        return (int) (Math.max(reservedPower - neededPower, 0) * (System.currentTimeMillis() - lastSelected) / 1000);
+    }
+
+    @Override
+    public int compareTo(User o) {
+        return Integer.compare(o.probability(), probability());
     }
 }

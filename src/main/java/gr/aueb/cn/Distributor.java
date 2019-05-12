@@ -9,10 +9,8 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Hashtable;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class Distributor {
 
@@ -20,20 +18,26 @@ public class Distributor {
 
     private Hashtable<String, User> energyUsers = new Hashtable<>();
     private final Hashtable<String, ObjectOutputStream> outputs = new Hashtable<>();
-    private ArrayList<String> usernames = new ArrayList<>();
 
-    private Hashtable<RequestEnergy, Long> delayedRequests = new Hashtable<>();
+    private final Hashtable<RequestEnergy, Long> delayedRequests = new Hashtable<>();
 
     public Distributor(int port) {
         try {
+            new Timer(true).scheduleAtFixedRate(new TimerTask() {
+                @Override
+                public void run() {
+                    runDelayed();
+                }
+            }, 1000L, 1000L);
+
             this.server = new ServerSocket(port);
-            System.out.println("Server live");
             while (true) {
                 try {
                     Socket socket = server.accept();
                     new Thread(() -> manageIncoming(socket)).start();
                 } catch (IOException e) {
                     e.printStackTrace();
+                    break;
                 }
             }
         } catch (IOException e) {
@@ -52,8 +56,6 @@ public class Distributor {
                     Object message = in.readObject();
                     if (message instanceof SignIn) {
                         signIn(out, (SignIn) message);
-                        username = ((SignIn) message).getUsername();
-                        System.out.println(username + " connected!");
                     } else if (message instanceof RequestEnergy) {
                         requestedEnergy((RequestEnergy) message);
                     } else if (message instanceof SendEnergy) {
@@ -63,8 +65,6 @@ public class Distributor {
                     } else {
                         continue;
                     }
-
-                    runDelayed();
                 }
             } catch (Exception ignored) {
 
@@ -83,15 +83,17 @@ public class Distributor {
     }
 
     private void runDelayed() {
-        new Hashtable<>(delayedRequests).entrySet().stream().filter(it -> it.getValue() < System.currentTimeMillis()).forEach(req -> {
-            req.getKey().setDelay(null);
-            try {
-                requestedEnergy(req.getKey());
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            delayedRequests.remove(req.getKey());
-        });
+        synchronized (delayedRequests) {
+            new Hashtable<>(delayedRequests).entrySet().stream().filter(it -> it.getValue() < System.currentTimeMillis()).forEach(req -> {
+                req.getKey().setDelay(null);
+                try {
+                    requestedEnergy(req.getKey());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                delayedRequests.remove(req.getKey());
+            });
+        }
     }
 
     private void signIn(ObjectOutputStream out, SignIn request) {
@@ -106,6 +108,8 @@ public class Distributor {
 
         energyUsers.put(request.getUsername(), user);
         outputs.put(request.getUsername(), out);
+
+        System.out.println(user.getUsername() + " connected!");
     }
 
     private void handleUpdate(Update message) {
@@ -117,95 +121,79 @@ public class Distributor {
                 energyUser.setReservedPower(user.getReserved());
             });
         }
-        System.out.println("New Stats!");
-        new Hashtable<>(energyUsers).entrySet().stream().forEach(req -> {
-            System.out.println(req.getValue().toString());
-        });
+
+        // Debug output.
+        System.out.println("Status:");
+        new Hashtable<>(energyUsers).forEach((key, value) -> System.out.println(value.toString()));
+        System.out.println();
     }
 
-    private void requestedEnergy(RequestEnergy message) throws IOException {
-        System.out.println("New Request");
+    private synchronized void requestedEnergy(RequestEnergy message) throws IOException {
+        System.out.println("Incoming request...");
+
+        // Sending requests directly to the requested energy user.
         if (message.getUsername() != null) {
-            //Send to the destination.
             if (outputs.containsKey(message.getUsername())) {
+                // Send to the destination.
+                System.out.println("Routing to " + message.getUsername());
+
                 outputs.get(message.getUsername()).writeObject(message);
                 outputs.get(message.getUsername()).flush();
             } else {
-                System.out.println("Fail Here");
+                // No username - failed.
                 outputs.get(message.getDestination()).writeObject(new RequestEnergyFailure(message.getUsername()));
                 outputs.get(message.getDestination()).flush();
             }
             return;
         }
 
-        User toSendTo = energyUsers.values().stream()
-                .filter(it -> it.getAvailablePower() >= message.getEnergyNeeded() && it.getNeededPower() < 1)
-                .findFirst().orElse(null);
+        // Can pick multiple users.
+        List<User> toSendTo = energyUsers.values().stream()
+                .filter(it -> (it.getNeededPower() == 0) && !it.getUsername().equals(message.getDestination()))
+                .collect(Collectors.toList());
 
-        if (toSendTo != null) {
-            try {
-                outputs.get(toSendTo.getUsername()).writeObject(message);
-                outputs.get(toSendTo.getUsername()).flush();
-            } catch (IOException e) {
-                e.printStackTrace();
+        // The total available power for all the users.
+        int availablePower = toSendTo.stream().map(User::getAvailablePower).reduce(Integer::sum).orElse(0);
+
+        if (!toSendTo.isEmpty() && availablePower >= message.getEnergyNeeded()) {
+
+            // Figure out how many are needed and request power.
+            ArrayList<User> select = new ArrayList<>(energyUsers.values());
+
+            // Sortable by probability.
+            Collections.sort(select);
+
+            int needed = message.getEnergyNeeded();
+            for (User user : select) {
+                int toUse = Math.min(user.getAvailablePower(), needed);
+
+                System.out.println("Requesting " + toUse + " from " + user.getUsername() + " to " + message.getDestination());
+
+                RequestEnergy requestEnergy = new RequestEnergy(message.getUsername(), message.getDestination(), toUse);
+                outputs.get(user.getUsername()).writeObject(requestEnergy);
+                outputs.get(user.getUsername()).flush();
+                user.setLastSelected(System.currentTimeMillis());
+
+                if ((needed -= toUse) <= 0) {
+                    break;
+                }
             }
+
         } else if (message.getDelay() != null) {
             //Store for later access.
-            delayedRequests.put(message, System.currentTimeMillis() + message.getDelay());
-        } else {
-            if(message.wantsBackup()){
-
-                User user1 = null, user2 = null;
-                ArrayList<User> findTwo = new ArrayList<>(energyUsers.values());
-                findTwo.remove(energyUsers.get(message.getDestination()));
-                Optional<User> optionalUser = findTwo.stream().max(Comparator.comparing(User::getAvailablePower));
-
-                if(optionalUser.isPresent()){
-                    user1 = optionalUser.get();
-                    findTwo.remove(user1);
-                }
-
-                optionalUser = findTwo.stream().max(Comparator.comparing(User::getAvailablePower));
-                if(optionalUser.isPresent()){
-                    user2 = optionalUser.get();
-                    findTwo.remove(user2);
-                }
-
-                if(user1 != null && user2 != null){
-                    if(user1.getAvailablePower() >= message.getEnergyNeeded()){
-                        outputs.get(user1.getUsername()).writeObject(message);
-                        outputs.get(user1.getUsername()).flush();
-                        return;
-                    }
-
-                    if((user1.getAvailablePower() + user2.getAvailablePower()) >= message.getEnergyNeeded()){
-                        //message.setEnergyNeeded(message.getEnergyNeeded()-user1.getAvailablePower());
-                        System.out.println(message.getDestination());
-                        RequestEnergy msg1 = new RequestEnergy(user1.getUsername(), message.getDestination(), user1.getAvailablePower());
-                        outputs.get(user1.getUsername()).writeObject(msg1);
-                        outputs.get(user1.getUsername()).flush();
-                        RequestEnergy msg2 = new RequestEnergy(user2.getUsername(), message.getDestination(), message.getEnergyNeeded()-user1.getAvailablePower());
-                        outputs.get(user2.getUsername()).writeObject(msg2);
-                        outputs.get(user2.getUsername()).flush();
-                    }
-                    else{
-                        outputs.get(message.getDestination()).writeObject(new RequestEnergyFailure(message.getDestination()));
-                        outputs.get(message.getDestination()).flush();
-                    }
-                }
-                else{
-                    outputs.get(message.getUsername()).writeObject(new RequestEnergyFailure(message.getUsername()));
-                    outputs.get(message.getUsername()).flush();
-                }
+            synchronized (delayedRequests) {
+                delayedRequests.put(message, System.currentTimeMillis() + message.getDelay());
+                System.out.println("Delaying " + message.getDestination() + "'s request.");
             }
-            /*outputs.get(message.getUsername()).writeObject(new RequestEnergyFailure(message.getUsername()));
-            outputs.get(message.getUsername()).flush();*/
+        } else {
+            outputs.get(message.getDestination()).writeObject(new RequestEnergyFailure(message.getUsername()));
+            outputs.get(message.getDestination()).flush();
         }
     }
 
     private void sentEnergy(SendEnergy message) throws IOException {
-        synchronized (outputs){
-            if(outputs.containsKey(message.getDestination())){
+        synchronized (outputs) {
+            if (outputs.containsKey(message.getDestination())) {
                 outputs.get(message.getDestination()).writeObject(message);
                 outputs.get(message.getDestination()).flush();
             }
