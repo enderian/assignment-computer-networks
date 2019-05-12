@@ -173,9 +173,8 @@ public class EnergyUser implements Serializable {
             in_need += needed;
             try {
                 sendUpdate();
-
                 synchronized (out) {
-                    out.writeObject(new RequestEnergy(null, username, needed, 1000L));
+                    out.writeObject(new RequestEnergy(null, username, needed, 10000L));
                     out.flush();
                 }
             } catch (IOException e) {

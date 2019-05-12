@@ -18,17 +18,10 @@ public class Distributor {
 
     private Hashtable<String, User> energyUsers = new Hashtable<>();
     private final Hashtable<String, ObjectOutputStream> outputs = new Hashtable<>();
-
-    private final Hashtable<RequestEnergy, Long> delayedRequests = new Hashtable<>();
+    private Timer timer = new Timer(true);
 
     public Distributor(int port) {
         try {
-            new Timer(true).scheduleAtFixedRate(new TimerTask() {
-                @Override
-                public void run() {
-                    runDelayed();
-                }
-            }, 1000L, 1000L);
 
             this.server = new ServerSocket(port);
             while (true) {
@@ -56,6 +49,7 @@ public class Distributor {
                     Object message = in.readObject();
                     if (message instanceof SignIn) {
                         signIn(out, (SignIn) message);
+                        username = ((SignIn) message).getUsername();
                     } else if (message instanceof RequestEnergy) {
                         requestedEnergy((RequestEnergy) message);
                     } else if (message instanceof SendEnergy) {
@@ -68,8 +62,6 @@ public class Distributor {
                 }
             } catch (Exception ignored) {
 
-                //TODO Later.
-
             } finally {
                 if (username != null) {
                     energyUsers.remove(username);
@@ -79,20 +71,6 @@ public class Distributor {
 
         } catch (IOException e) {
             e.printStackTrace();
-        }
-    }
-
-    private void runDelayed() {
-        synchronized (delayedRequests) {
-            new Hashtable<>(delayedRequests).entrySet().stream().filter(it -> it.getValue() < System.currentTimeMillis()).forEach(req -> {
-                req.getKey().setDelay(null);
-                try {
-                    requestedEnergy(req.getKey());
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                delayedRequests.remove(req.getKey());
-            });
         }
     }
 
@@ -180,11 +158,18 @@ public class Distributor {
             }
 
         } else if (message.getDelay() != null) {
-            //Store for later access.
-            synchronized (delayedRequests) {
-                delayedRequests.put(message, System.currentTimeMillis() + message.getDelay());
-                System.out.println("Delaying " + message.getDestination() + "'s request.");
-            }
+            System.out.println("Delaying " + message.getDestination() + "'s request.");
+            this.timer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    message.setDelay(null);
+                    try {
+                        requestedEnergy(message);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }, message.getDelay());
         } else {
             outputs.get(message.getDestination()).writeObject(new RequestEnergyFailure(message.getUsername()));
             outputs.get(message.getDestination()).flush();
